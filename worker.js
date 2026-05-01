@@ -13,19 +13,39 @@ export default {
     }
 
     if (url.pathname === "/api/schedule" || url.pathname === "/api/race") {
-      const target = `https://rev-worker-schedule-full.umeparis0317.workers.dev/api/schedule?raceId=${raceId}`;
-      const res = await fetch(target);
-      const data = await res.json();
+      try {
+        const target = `https://rev-worker-schedule-full.umeparis0317.workers.dev/api/schedule?raceId=${raceId}`;
+        const res = await fetch(target);
+        const text = await res.text();
 
-      return new Response(JSON.stringify({
-        ok: true,
-        mode: "bridge",
-        raceId,
-        race: data.race,
-        horses: data.horses,
-        oddsCount: data.oddsCount,
-        oddsStatus: data.oddsStatus
-      }), { headers: { "content-type": "application/json" } });
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "schedule-full returned non-JSON",
+            raw: text.slice(0, 300)
+          }), { headers: { "content-type": "application/json" } });
+        }
+
+        return new Response(JSON.stringify({
+          ok: true,
+          mode: "bridge",
+          raceId,
+          race: data.race,
+          horses: data.horses,
+          oddsCount: data.oddsCount,
+          oddsStatus: data.oddsStatus
+        }), { headers: { "content-type": "application/json" } });
+
+      } catch (e) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error: "bridge fetch error",
+          detail: String(e.message || e)
+        }), { headers: { "content-type": "application/json" } });
+      }
     }
 
     return new Response(JSON.stringify({ ok: false, error: "not found" }), {
