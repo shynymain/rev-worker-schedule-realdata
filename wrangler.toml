@@ -1,4 +1,8 @@
-name = "rev-worker-schedule-realdata"
+name = "rev-realdata-schedule"
 main = "worker.js"
-compatibility_date = "2025-08-01"
+compatibility_date = "2026-05-01"
+
 workers_dev = true
+
+[observability]
+enabled = true
