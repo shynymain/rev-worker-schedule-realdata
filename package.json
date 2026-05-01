@@ -1,5 +1,11 @@
 {
-  "name": "rev-worker-schedule-realdata",
+  "name": "rev-worker-schedule-realdata-full-auto",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
 }
