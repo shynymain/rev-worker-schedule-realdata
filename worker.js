@@ -5,36 +5,93 @@ const headers = {
   "access-control-allow-headers": "content-type"
 };
 
-const PLACE_CODES = {
-  "札幌": "01",
-  "函館": "02",
-  "福島": "03",
-  "新潟": "04",
-  "東京": "05",
-  "中山": "06",
-  "中京": "07",
-  "京都": "08",
-  "阪神": "09",
-  "小倉": "10"
-};
-
-const PLACE_NAMES = Object.fromEntries(Object.entries(PLACE_CODES).map(([k, v]) => [v, k]));
-
-function pad2(n) { return String(n).padStart(2, "0"); }
-function ymdSlash(d) { return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`; }
-function ymdCompact(d) { return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`; }
-function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-function nextWeekend(base = new Date()) {
-  const day = base.getDay();
+// ====== ユーティリティ（仮データ生成：ルーティング確認用）======
+function ymd(d){
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return `${y}/${m}/${day}`;
+}
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function nextWeekend(base){
+  const day=base.getDay(); // 0 Sun, 6 Sat
   const toSat = day === 6 ? 0 : (6 - day + 7) % 7;
   const sat = addDays(base, toSat);
-  return [sat, addDays(sat, 1)];
+  const sun = addDays(sat, 1);
+  return [sat, sun];
+}
+function makeRaces(){
+  const now = new Date();
+  const [sat,sun] = nextWeekend(now);
+  const dates=[sat,sun];
+  const places=["東京","京都","新潟"];
+  const races=[];
+  dates.forEach((d)=>{
+    places.forEach((place)=>{
+      for(let raceNo=1; raceNo<=12; raceNo++){
+        const id=`${ymd(d).replaceAll('/','-')}_${place}_${String(raceNo).padStart(2,'0')}`;
+        races.push({
+          id,
+          race:{
+            date: ymd(d),
+            place,
+            raceNo:String(raceNo),
+            raceName:`${place}${raceNo}R`,
+            grade: raceNo===11 ? "G2" : (raceNo>=9 ? "OP" : "1勝"),
+            condition: raceNo<=6 ? "3歳" : "4歳以上",
+            age: raceNo<=6 ? "3歳" : "4歳以上",
+            surface: raceNo<=4 ? "ダート" : "芝",
+            distance: ["1200m","1400m","1600m","1800m","1600m","1800m","2000m","1400m","1800m","2000m","2400m","1600m"][raceNo-1],
+            headcount: String(12 + (raceNo % 7))
+          },
+          horses: [],
+          source:"route-test"
+        });
+      }
+    });
+  });
+  return races;
 }
 
-function stripHtml(html) {
-  return String(html || "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
+// ====== ルーティング ======
+export default {
+  async fetch(request) {
+
+    if (request.method === "OPTIONS") {
+      return new Response(JSON.stringify({ ok: true }), { headers });
+    }
+
+    const url = new URL(request.url);
+
+    // health
+    if (url.pathname === "/api/health") {
+      return new Response(JSON.stringify({
+        ok: true,
+        service: "rev-realdata-schedule-worker",
+        endpoints: ["/api/schedule"]
+      }), { headers });
+    }
+
+    // schedule（まずはここが動けばOK）
+    if (url.pathname === "/api/schedule") {
+      const races = makeRaces();
+      return new Response(JSON.stringify({
+        ok: true,
+        count: races.length,
+        generatedAt: new Date().toISOString(),
+        source: "route-test",
+        races
+      }), { headers });
+    }
+
+    // not found
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "not found",
+      path: url.pathname
+    }), { status: 404, headers });
+  }
+};    .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
