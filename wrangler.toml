@@ -1,0 +1,8 @@
+name = "rev-worker-schedule-realdata"
+main = "worker.js"
+compatibility_date = "2025-05-01"
+
+# KVを使う場合だけCloudflareでnamespace作成後、下を有効化してidを入れてください。
+# [[kv_namespaces]]
+# binding = "RACES_KV"
+# id = "PASTE_YOUR_KV_NAMESPACE_ID"
