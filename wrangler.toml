@@ -1,4 +1,4 @@
-name = "rev-worker-schedule-realdata"
+name = "rev-worker-schedule-full"
 main = "worker.js"
 compatibility_date = "2026-05-01"
 
