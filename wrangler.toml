@@ -1,4 +1,0 @@
-
-name = "rev-worker-schedule-realdata"
-main = "worker.js"
-compatibility_date = "2025-05-01"
