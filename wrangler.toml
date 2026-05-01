@@ -1,8 +1,11 @@
-name = "rev-worker-schedule-realdata"
+name = "rev-worker-schedule-realdata
+"
 main = "worker.js"
-compatibility_date = "2026-05-01"
-
+compatibility_date = "2026-05-02"
 workers_dev = true
 
-[observability]
-enabled = true
+# KV保存を使う場合だけCloudflare側でREV_KVを追加してください。
+# 追加しなくてもWorkerは正常に起動します。
+# [[kv_namespaces]]
+# binding = "REV_KV"
+# id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
