@@ -1,6 +1,6 @@
 name = "rev-worker-schedule-realdata"
 main = "worker.js"
-compatibility_date = "2026-05-01"
+compatibility_date = "2026-05-02"
 
 [vars]
-APP_NAME = "Rev Schedule RealData Complete"
+FULL_WORKER_BASE = "https://rev-worker-schedule-full.umeparis0317.workers.dev"

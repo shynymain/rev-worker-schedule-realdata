@@ -1,3 +1,5 @@
+const VERSION = "realdata-bridge-full-worker-2026-05-02";
+
 const headers = {
   "content-type": "application/json;charset=utf-8",
   "access-control-allow-origin": "*",
@@ -5,147 +7,235 @@ const headers = {
   "access-control-allow-headers": "content-type"
 };
 
-const VERSION = "realdata-complete-2026-05-02";
+const PLACES = [
+  { code: "01", name: "札幌" }, { code: "02", name: "函館" }, { code: "03", name: "福島" },
+  { code: "04", name: "新潟" }, { code: "05", name: "東京" }, { code: "06", name: "中山" },
+  { code: "07", name: "中京" }, { code: "08", name: "京都" }, { code: "09", name: "阪神" }, { code: "10", name: "小倉" }
+];
+const PLACE_BY_NAME = Object.fromEntries(PLACES.map(p => [p.name, p.code]));
+const PLACE_BY_CODE = Object.fromEntries(PLACES.map(p => [p.code, p.name]));
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), { status, headers });
+function json(data, init = {}) {
+  return new Response(JSON.stringify(data), { ...init, headers });
 }
-function clean(v){ return String(v ?? "").trim(); }
-function ymd(date){
-  const y = date.getFullYear();
-  const m = String(date.getMonth()+1).padStart(2,"0");
-  const d = String(date.getDate()).padStart(2,"0");
-  return `${y}/${m}/${d}`;
+function ymd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${day}`;
 }
-function makeId(date, place, raceNo){
-  return `${String(date).replaceAll("/","")}_${place}_${String(raceNo).padStart(2,"0")}`;
+function ymdCompact(dateText) {
+  return String(dateText || "").replace(/\D/g, "").slice(0, 8);
 }
-function normalizeRace(input = {}){
-  const race = input.race || input;
-  const date = clean(race.date);
-  const place = clean(race.place);
-  const raceNo = clean(race.raceNo || race.no || race.r);
+function nextSaturday(base = new Date()) {
+  const d = new Date(base);
+  const add = (6 - d.getDay() + 7) % 7;
+  d.setDate(d.getDate() + add);
+  return d;
+}
+function addDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function raceIdFrom(dateText, place, raceNo) {
+  const code = PLACE_BY_NAME[place] || place;
+  return `${ymdCompact(dateText)}${code}${String(raceNo).padStart(2, "0")}`;
+}
+function baseRace(dateText, place, raceNo) {
+  const id = raceIdFrom(dateText, place, raceNo);
   return {
-    id: clean(input.id) || makeId(date, place, raceNo),
+    id,
     race: {
-      date,
+      date: dateText,
       place,
-      raceNo,
-      raceName: clean(race.raceName || race.name),
-      grade: clean(race.grade),
-      condition: clean(race.condition),
-      surface: clean(race.surface),
-      age: clean(race.age),
-      distance: clean(race.distance),
-      headcount: clean(race.headcount || race.horsesCount)
+      raceNo: String(raceNo),
+      raceName: `${place}${raceNo}R`,
+      grade: "",
+      condition: "",
+      surface: "",
+      age: "",
+      distance: "",
+      headcount: ""
     },
-    horses: Array.isArray(input.horses) ? input.horses.map(h => ({
-      frame: clean(h.frame),
-      no: clean(h.no || h.number),
-      name: clean(h.name),
-      last1: clean(h.last1),
-      last2: clean(h.last2),
-      last3: clean(h.last3),
-      odds: clean(h.odds),
-      popularity: clean(h.popularity)
-    })) : [],
-    result: input.result || {},
-    source: clean(input.source) || "worker"
+    horses: [],
+    source: "realdata-bridge-template",
+    sourceRaceId: id,
+    status: "schedule_only"
   };
 }
-
-// 過去重賞ベースデータ。必要に応じてここへ追加すれば /api/history-grades で返ります。
-// まずはアプリ連携確認用の最小データを入れています。
-const HISTORY_GRADES = [
-  {
-    race:{date:"2025/12/28",place:"中山",raceNo:"11",raceName:"ホープフルステークス",grade:"G1",condition:"2歳",surface:"芝",age:"2歳",distance:"2000m",headcount:""},
-    horses:[], result:{}, source:"history-seed"
-  },
-  {
-    race:{date:"2025/12/21",place:"中山",raceNo:"11",raceName:"有馬記念",grade:"G1",condition:"3歳以上",surface:"芝",age:"3歳以上",distance:"2500m",headcount:""},
-    horses:[], result:{}, source:"history-seed"
-  },
-  {
-    race:{date:"2025/11/30",place:"東京",raceNo:"12",raceName:"ジャパンカップ",grade:"G1",condition:"3歳以上",surface:"芝",age:"3歳以上",distance:"2400m",headcount:""},
-    horses:[], result:{}, source:"history-seed"
-  },
-  {
-    race:{date:"2025/11/23",place:"京都",raceNo:"11",raceName:"マイルチャンピオンシップ",grade:"G1",condition:"3歳以上",surface:"芝",age:"3歳以上",distance:"1600m",headcount:""},
-    horses:[], result:{}, source:"history-seed"
-  },
-  {
-    race:{date:"2025/11/16",place:"京都",raceNo:"11",raceName:"エリザベス女王杯",grade:"G1",condition:"3歳以上牝",surface:"芝",age:"3歳以上",distance:"2200m",headcount:""},
-    horses:[], result:{}, source:"history-seed"
-  }
-].map(normalizeRace);
-
-function upcomingSchedule(){
-  const today = new Date();
-  const day = today.getDay();
-  const sat = new Date(today); sat.setDate(today.getDate() + ((6 - day + 7) % 7));
-  const sun = new Date(sat); sun.setDate(sat.getDate()+1);
-  const places = ["東京","京都","新潟"];
+function makeScheduleTemplates() {
+  const sat = nextSaturday(new Date());
+  const sun = addDays(sat, 1);
+  const places = ["東京", "京都", "新潟"];
+  const dates = [ymd(sat), ymd(sun)];
   const races = [];
-  for (const d of [sat, sun]) {
+  for (const date of dates) {
     for (const place of places) {
-      for (let r=1; r<=12; r++) {
-        const surface = r >= 9 ? "芝" : "";
-        const grade = r === 11 ? (place === "東京" ? "G2" : "OP") : "";
-        const raceName = r === 11 ? `${place}メイン` : `${place}${r}R`;
-        races.push(normalizeRace({
-          source:"schedule-template",
-          race:{date:ymd(d),place,raceNo:String(r),raceName,grade,condition:r>=9?"3歳以上":"",surface,age:r>=9?"3歳以上":"",distance:r>=9?"芝1600m".replace("芝",""):"",headcount:""},
-          horses:[]
-        }));
-      }
+      for (let r = 1; r <= 12; r++) races.push(baseRace(date, place, r));
     }
   }
   return races;
 }
-
-async function readBody(request){
-  try { return await request.json(); } catch { return {}; }
+function normalizeFullResponse(data, fallbackId = "") {
+  const race = data?.race?.race ? data.race : data?.race;
+  if (race && race.race && Array.isArray(race.horses)) return race;
+  if (data?.race && Array.isArray(data?.horses)) {
+    const raceObj = {
+      id: data.race.id || `${data.race.date}_${data.race.place}_${String(data.race.raceNo || "").padStart(2, "0")}`,
+      race: data.race,
+      horses: data.horses,
+      source: "schedule-full-bridge",
+      sourceRaceId: fallbackId,
+      oddsCount: data.oddsCount || 0,
+      oddsStatus: data.oddsStatus || "",
+      status: data.status || "ok",
+      warnings: data.warnings || []
+    };
+    return raceObj;
+  }
+  return null;
+}
+async function fetchFull(env, raceId) {
+  const base = (env.FULL_WORKER_BASE || "https://rev-worker-schedule-full.umeparis0317.workers.dev").replace(/\/$/, "");
+  const target = `${base}/api/schedule?raceId=${encodeURIComponent(raceId)}`;
+  const res = await fetch(target, { headers: { accept: "application/json" } });
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = { ok: false, error: "full_worker_non_json", raw: text.slice(0, 500) }; }
+  if (!res.ok || !data.ok) return { ok: false, raceId, sourceUrl: target, status: res.status, error: data.error || `full worker ${res.status}`, raw: data };
+  const race = normalizeFullResponse(data, raceId);
+  if (!race) return { ok: false, raceId, sourceUrl: target, error: "full_worker_shape_unexpected", raw: data };
+  race.source = "rev-worker-schedule-full";
+  race.sourceRaceId = raceId;
+  race.bridgeSourceUrl = target;
+  return { ok: true, raceId, race };
+}
+async function fetchManyFull(env, ids) {
+  const limited = ids.filter(Boolean).slice(0, 12);
+  const results = await Promise.allSettled(limited.map(id => fetchFull(env, id)));
+  const races = [];
+  const errors = [];
+  for (const r of results) {
+    const v = r.status === "fulfilled" ? r.value : { ok: false, error: String(r.reason) };
+    if (v.ok) races.push(v.race); else errors.push(v);
+  }
+  return { races, errors, requested: ids.length, fetched: limited.length };
+}
+function historyGrades() {
+  // 保存・分析用の入口。実データ詳細は /api/race?raceId=... または /api/schedule?raceIds=... で full worker から取得する。
+  const items = [
+    { date: "2025/12/28", place: "中山", raceNo: "11", raceName: "ホープフルステークス", grade: "G1", surface: "芝", distance: "2000m" },
+    { date: "2025/12/27", place: "阪神", raceNo: "11", raceName: "阪神カップ", grade: "G2", surface: "芝", distance: "1400m" },
+    { date: "2025/12/21", place: "中山", raceNo: "11", raceName: "有馬記念", grade: "G1", surface: "芝", distance: "2500m" },
+    { date: "2025/12/14", place: "阪神", raceNo: "11", raceName: "朝日杯フューチュリティステークス", grade: "G1", surface: "芝", distance: "1600m" },
+    { date: "2025/12/07", place: "中京", raceNo: "11", raceName: "チャンピオンズカップ", grade: "G1", surface: "ダート", distance: "1800m" },
+    { date: "2025/11/30", place: "東京", raceNo: "12", raceName: "ジャパンカップ", grade: "G1", surface: "芝", distance: "2400m" },
+    { date: "2025/11/23", place: "京都", raceNo: "11", raceName: "マイルチャンピオンシップ", grade: "G1", surface: "芝", distance: "1600m" },
+    { date: "2025/11/16", place: "京都", raceNo: "11", raceName: "エリザベス女王杯", grade: "G1", surface: "芝", distance: "2200m" },
+    { date: "2025/11/02", place: "東京", raceNo: "11", raceName: "天皇賞（秋）", grade: "G1", surface: "芝", distance: "2000m" },
+    { date: "2025/10/26", place: "京都", raceNo: "11", raceName: "菊花賞", grade: "G1", surface: "芝", distance: "3000m" },
+    { date: "2025/10/19", place: "京都", raceNo: "11", raceName: "秋華賞", grade: "G1", surface: "芝", distance: "2000m" },
+    { date: "2025/10/05", place: "東京", raceNo: "11", raceName: "毎日王冠", grade: "G2", surface: "芝", distance: "1800m" }
+  ];
+  return items.map(x => ({
+    id: raceIdFrom(x.date, x.place, x.raceNo),
+    race: { ...x, condition: "", age: "", headcount: "" },
+    horses: [],
+    source: "history-grades-index",
+    sourceRaceId: raceIdFrom(x.date, x.place, x.raceNo),
+    status: "history_index_only"
+  }));
 }
 
 export default {
-  async fetch(request, env, ctx) {
-    if (request.method === "OPTIONS") return json({ ok:true });
+  async fetch(request, env) {
+    if (request.method === "OPTIONS") return json({ ok: true });
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (path === "/" || path === "/api/health") {
-      return json({ ok:true, app:"rev-worker-schedule-realdata", version:VERSION, endpoints:["/api/schedule","/api/history-grades","/api/race?id=...","/api/results","/api/import-json"] });
-    }
+    try {
+      if (path === "/" || path === "/api/health") {
+        return json({
+          ok: true,
+          app: "rev-worker-schedule-realdata",
+          version: VERSION,
+          fullWorkerBase: (env.FULL_WORKER_BASE || "https://rev-worker-schedule-full.umeparis0317.workers.dev").replace(/\/$/, ""),
+          endpoints: [
+            "/api/schedule",
+            "/api/schedule?raceId=202605020101",
+            "/api/schedule?raceIds=202605020101,202605020102",
+            "/api/race?raceId=202605020101",
+            "/api/history-grades",
+            "/api/results",
+            "/api/import-json"
+          ]
+        });
+      }
 
-    if (path === "/api/schedule") {
-      const mode = url.searchParams.get("mode") || "upcoming";
-      const races = upcomingSchedule();
-      return json({ ok:true, version:VERSION, mode, source:"schedule-template", note:"実データ取得元を接続するまでは開催予定テンプレートを返します。出馬表JSONを /api/import-json 形式で追加できます。", count:races.length, races });
-    }
+      if (path === "/api/race") {
+        const raceId = url.searchParams.get("raceId") || url.searchParams.get("id") || "";
+        if (!/^\d{12}$/.test(raceId)) return json({ ok: false, error: "raceId must be 12 digits" }, { status: 400 });
+        const got = await fetchFull(env, raceId);
+        if (!got.ok) return json(got, { status: 502 });
+        return json({ ok: true, version: VERSION, raceId, race: got.race, horses: got.race.horses || [] });
+      }
 
-    if (path === "/api/history-grades") {
-      const grade = url.searchParams.get("grade");
-      const races = grade ? HISTORY_GRADES.filter(r => r.race.grade === grade) : HISTORY_GRADES;
-      return json({ ok:true, version:VERSION, source:"history-seed", note:"過去重賞の全件化はこのHISTORY_GRADES配列へ追記、または外部JSON/KV接続で拡張します。", count:races.length, races });
-    }
+      if (path === "/api/schedule") {
+        const raceId = url.searchParams.get("raceId") || url.searchParams.get("id") || "";
+        const raceIds = (url.searchParams.get("raceIds") || "").split(",").map(s => s.trim()).filter(Boolean);
+        if (raceId) raceIds.unshift(raceId);
 
-    if (path === "/api/race") {
-      const id = url.searchParams.get("id") || "";
-      const all = [...HISTORY_GRADES, ...upcomingSchedule()];
-      const found = all.find(r => r.id === id || makeId(r.race.date, r.race.place, r.race.raceNo) === id);
-      return found ? json({ ok:true, race:found }) : json({ ok:false, error:"race not found", id }, 404);
-    }
+        if (raceIds.length) {
+          const got = await fetchManyFull(env, raceIds);
+          return json({
+            ok: got.errors.length === 0,
+            version: VERSION,
+            mode: "full-worker-detail",
+            count: got.races.length,
+            races: got.races,
+            errors: got.errors,
+            requested: got.requested,
+            fetched: got.fetched
+          }, got.races.length ? {} : { status: 502 });
+        }
 
-    if (path === "/api/results") {
-      return json({ ok:true, version:VERSION, source:"result-template", results:[], note:"結果取得Workerを別運用している場合は既存 rev-worker-result のURLを使ってください。後でここへ統合可能です。" });
-    }
+        return json({
+          ok: true,
+          version: VERSION,
+          mode: "upcoming-index",
+          source: "realdata-bridge-template",
+          note: "一覧は開催テンプレートです。出馬表・オッズは /api/schedule?raceId=12桁ID または raceIds 指定時に rev-worker-schedule-full から取得します。",
+          count: makeScheduleTemplates().length,
+          races: makeScheduleTemplates()
+        });
+      }
 
-    if (path === "/api/import-json" && request.method === "POST") {
-      const body = await readBody(request);
-      const races = Array.isArray(body.races) ? body.races.map(normalizeRace) : (body.race ? [normalizeRace(body)] : []);
-      return json({ ok:true, count:races.length, races, note:"このエンドポイントは整形確認用です。永続保存する場合はKV bindingを追加します。" });
-    }
+      if (path === "/api/history-grades") {
+        return json({
+          ok: true,
+          version: VERSION,
+          mode: "history-grade-index",
+          note: "過去重賞の入口一覧です。詳細取得は各 sourceRaceId を /api/race?raceId=... に渡してください。",
+          count: historyGrades().length,
+          races: historyGrades()
+        });
+      }
 
-    return json({ ok:false, error:"not found", path }, 404);
+      if (path === "/api/results") {
+        return json({ ok: true, version: VERSION, mode: "results-placeholder", results: [], note: "結果取得Workerを統合する場合はここへ接続します。" });
+      }
+
+      if (path === "/api/import-json") {
+        if (request.method !== "POST") return json({ ok: false, error: "POST only" }, { status: 405 });
+        const body = await request.json().catch(() => null);
+        const races = Array.isArray(body?.races) ? body.races : (body?.race ? [body] : []);
+        return json({ ok: true, version: VERSION, importedCount: races.length, races });
+      }
+
+      return json({ ok: false, error: "not found", path }, { status: 404 });
+    } catch (e) {
+      return json({ ok: false, error: String(e.message || e), version: VERSION }, { status: 500 });
+    }
   }
 };

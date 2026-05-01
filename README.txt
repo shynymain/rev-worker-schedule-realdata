@@ -1,17 +1,19 @@
-REV-VAN 実データ schedule Worker
+rev-worker-schedule-realdata bridge版
 
-使い方:
-1. Cloudflare Workersで新規Workerを作成
-2. このZIP内の worker.js と wrangler.toml をリポジトリ直下に配置
-3. Deploy
-4. 動作確認:
-   https://<worker名>.<subdomain>.workers.dev/api/health
-   https://<worker名>.<subdomain>.workers.dev/api/schedule
-   https://<worker名>.<subdomain>.workers.dev/api/schedule?date=20260502
+目的:
+- 既存の rev-worker-schedule-full を出馬表・オッズ取得エンジンとして使う
+- この Worker はアプリ用の /api/schedule /api/history-grades /api/race をまとめる
 
-AI Bindingは不要です。
+デプロイ先:
+- Cloudflare Worker: rev-worker-schedule-realdata
+
+確認URL:
+- /api/health
+- /api/schedule
+- /api/schedule?raceId=202605020101
+- /api/race?raceId=202605020101
+- /api/history-grades
 
 注意:
-このWorkerは netkeiba の公開HTMLを読み取って実レース一覧・出馬表を取得します。
-サイト側のHTML変更・アクセス制限がある場合は取得失敗することがあります。
-JRA-VAN DataLab公式連携ではありません。
+- /api/schedule 単体は開催一覧テンプレート
+- 出馬表・オッズ取得は raceId 指定時に rev-worker-schedule-full を呼び出す
